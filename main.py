@@ -154,15 +154,15 @@ for index, row in main_dataset.iterrows():
         rts = row['rts'].split()
         if row['cleaned_text'].startswith('rt @') or row['cleaned_text'].startswith('"rt @'):
             for mention in range(len(mentions) - 1):
-                G_users.add_edge(mentions[0], mentions[mention+1], type='mention')
+                G_users.add_edge(mentions[0], mentions[mention + 1], type='mention')
 
 # Add edges for retweets, we consider a retweet to happen when a retweeted tweet from a user includes another retweeted tweet. Example: RT @user1: RT @user2: ... This means that user1 is retweeting user2.
 for index, row in main_dataset.iterrows():
     if row['rts'] != "":
         rts = row['rts'].split()
         for rt in range(len(rts) - 1):
-            if rts[rt+1] != "rt" and rts[1]!=rts[rt+1]:
-                G_users.add_edge(rts[1], rts[rt+1], type='retweet')
+            if rts[rt + 1] != "rt" and rts[1] != rts[rt + 1]:
+                G_users.add_edge(rts[1], rts[rt + 1], type='retweet')
 
 # Task 5
 G_hashtags = nx.Graph()
@@ -188,32 +188,32 @@ for index, row in main_dataset.iterrows():
 
 # Task 6
 
-#Load pre-trained model
+# Load pre-trained model
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-#Convert cleaned tweets to embeddings
+# Convert cleaned tweets to embeddings
 cleaned_tweet_list = main_dataset['cleaned_text'].tolist()
 tweet_embeddings = model.encode(cleaned_tweet_list)
-#Compute cosine similarity between tweet vectors
+# Compute cosine similarity between tweet vectors
 threshold = 0.7
 cs = sklearn.metrics.pairwise.cosine_similarity(tweet_embeddings)
-#Create edges only when similarity exceeds the threshold
+# Create edges only when similarity exceeds the threshold
 G_semantic = nx.Graph()
 for tweet in cleaned_tweet_list:
     G_semantic.add_node(tweet)
 
 for i in range(len(cs)):
-    for j in range(i+1, len(cs)):
+    for j in range(i + 1, len(cs)):
         if cs[i][j] > threshold:
             G_semantic.add_edge(cleaned_tweet_list[i], cleaned_tweet_list[j])
 G_semantic.remove_edges_from(nx.selfloop_edges(G_semantic))
-#nx.draw(G_semantic, node_size=10)
-#plt.show()
+# nx.draw(G_semantic, node_size=10)
+# plt.show()
 
-#Task 7
+# Task 7
 user_hashtag_map = {}
 
-#Maps users to hashtags
+# Maps users to hashtags
 for _, row in main_dataset.iterrows():
     if row["mentions"] and row["hashtags"]:
         users = row["mentions"].split()
@@ -229,14 +229,14 @@ for i, (user, hashtags) in enumerate(user_hashtag_map.items()):
     if i == 20:
         break
     print(user, " :: ", hashtags)
-#Nodes = users, Edges = hashtags, it tells which users use which hashtags
+# Nodes = users, Edges = hashtags, it tells which users use which hashtags
 
-#Task 8
-#compute centralities
+# Task 8
+# compute centralities
 degree_centrality = nx.degree_centrality(G_users)
 betweenness_centrality = nx.betweenness_centrality(G_users)
 eigenvector_centrality = nx.eigenvector_centrality(G_users)
-#Store them in DataFrame and sort them
+# Store them in DataFrame and sort them
 centralities = pd.DataFrame({
     "node": degree_centrality.keys(),
     "degree": degree_centrality.values(),
@@ -258,11 +258,11 @@ print("Highest eigenvector centrality users are most influential users")
 print("As seen in the ranks above, most connected users also usually connects different communities the most")
 print("But most influential users arent the most connected users and their betweenness is low")
 
-#Task 9
+# Task 9
 
-#remove self loops
+# remove self loops
 G_users.remove_edges_from(nx.selfloop_edges(G_users))
-#create k_core
+# create k_core
 k_core = nx.k_core(G_users)
 print("users in k_core")
 print(k_core.nodes())
@@ -271,8 +271,8 @@ plt.title("k_core")
 nx.draw(k_core, node_size=10)
 plt.show()
 
-#Task 10
-#split data set into 6h time groups
+# Task 10
+# split data set into 6h time groups
 time_groups = main_dataset.groupby(pd.Grouper(key="Timestamp", freq="6h"))
 time_graphs = {}
 time_graphs_overtime = {}
@@ -283,7 +283,7 @@ for time, group in time_groups:
     G = nx.Graph()
 
     users = group["mentions"].tolist()
-    
+
     for user in users:
         us = user.split(" ")
         if not us:
@@ -295,10 +295,9 @@ for time, group in time_groups:
                 G_overtime.add_nodes(us[0])
         elif len(us) > 1:
             for i in range(1, len(us)):
-                G.add_edge(us[0],us[i])
+                G.add_edge(us[0], us[i])
                 G_overtime.add_edge(us[0], us[i])
 
-    
     time_graphs[time] = G
     time_graphs_overtime[time] = G_overtime.copy()
     degr = nx.degree_centrality(G)
