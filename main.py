@@ -2,6 +2,10 @@
 # Ivan Aguilar Garcia - Johannes Hyry - Veikka Päivärinta
 
 # Imports
+import random
+from collections import Counter
+import ndlib.models.ModelConfig as mc
+import ndlib.models.epidemics as ep
 import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -13,6 +17,8 @@ import en_core_web_sm
 import itertools
 import sklearn
 from sentence_transformers import SentenceTransformer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
 # Task 1
 # Read the Boston Bombings dataset and the timestamp dataset
 boston = pd.read_csv('2013_Boston_bombings-tweets_labeled.csv', )
@@ -244,13 +250,16 @@ centralities = pd.DataFrame({
     "eigenvector": eigenvector_centrality.values()
 })
 print("TOP DEGREE CENTRALITY:")
-print(centralities.sort_values("degree", ascending=False).head(10))
+top_degree_centrality = centralities.sort_values("degree", ascending=False).head(10)
+print(top_degree_centrality)
 print("")
 print("TOP BETWEENNESS CENTRALITY:")
-print(centralities.sort_values("betweenness", ascending=False).head(10))
+top_betweenness_centrality = centralities.sort_values("betweenness", ascending=False).head(10)
+print(top_betweenness_centrality)
 print("")
 print("TOP EIGENVECTOR CENTRALITY:")
-print(centralities.sort_values("eigenvector", ascending=False).head(10))
+top_eigenvector_centrality = centralities.sort_values("eigenvector", ascending=False).head(10)
+print(top_eigenvector_centrality)
 print("")
 print("highest degree centrality users are most connected")
 print("Highest betweenness centrality users connects different communities the most")
@@ -266,10 +275,10 @@ G_users.remove_edges_from(nx.selfloop_edges(G_users))
 k_core = nx.k_core(G_users)
 print("users in k_core")
 print(k_core.nodes())
-plt.figure()
-plt.title("k_core")
-nx.draw(k_core, node_size=10)
-plt.show()
+# plt.figure()
+# plt.title("k_core")
+# nx.draw(k_core, node_size=10)
+# plt.show()
 
 # Task 10
 # split data set into 6h time groups
@@ -325,3 +334,135 @@ print(metrics_df.head(100))
 print()
 print("CENTRALITY AND NETWORK SIZE EVOLUTION:")
 print(metrics_df_overtime.head(100))
+
+
+# Task 11
+analyzer = SentimentIntensityAnalyzer()
+
+# Add a new column to the dataset called sentiment_score,
+# the value of which is determined by the compound polarity score of the tweet text.
+# Compound polarity is a value between [-1, 1], where -1 indicates negative tone and 1 indicates positive tone.
+main_dataset['sentiment_score'] = main_dataset['cleaned_text'].apply(lambda input: analyzer.polarity_scores(input)['compound'])
+
+# Grouping the dataset into one day groups. The sentiment score inside a day gets summed together.
+groups = main_dataset.groupby(pd.Grouper(key='Timestamp', freq='D'))['sentiment_score'].sum()
+
+if False:  # <- turning off drawing plots in order to speed up execution
+    ax = groups.plot(y="sentiment_score")
+    ax.set_xlabel("Timestamp")
+    ax.set_ylabel("Sentiment score sum")
+    plt.show()
+
+
+# Task 12
+communities = list(nx.community.louvain_communities(G_users))
+
+# Creating a counter for each community, so we can count which hashtags are most popular in each community.
+counters = []
+for _ in range(len(communities)):
+    counters.append(Counter())
+
+# Assigning each community its own random color.
+colors = []
+for _ in range(len(communities)):
+    colors.append("#{:02x}{:02x}{:02x}".format(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
+
+# The node_colors array determines which color gets assigned for each individual node.
+node_colors = []
+for node in G_users:
+    for i, community in enumerate(communities):
+        if node in community:
+            node_colors.append(colors[i])
+            counters[i].update(user_hashtag_map.get(node))
+            break
+
+# Draw the plot
+if False:
+    pos = nx.spring_layout(G_users, k=0.3, iterations=50, seed=2)
+    nx.draw(G_users, pos=pos, node_size=100, node_color=node_colors, with_labels=False, font_size=12)
+
+communities.sort(key=len, reverse=True)
+
+print("5 most common hashtags in the 10 largest communities")
+for i in range(10):
+    S = G_users.subgraph(communities[i])
+    print(f"#{i + 1} largest component, size: {len(communities[i])}, hashtags: {counters[i].most_common(5)}")
+
+
+# Task 13
+visitedEdges = dict()
+for user in G_users:
+    # Conducting a bfs search starting from each user, so that we can see which user has the best reach (cascade size)
+    visitedEdges[user] = list(nx.bfs_edges(G_users, user))
+# Sorting users based on the amount of other users they reached
+visitedEdges = dict(sorted(visitedEdges.items(), key=lambda item: len(item[1]), reverse=True))
+
+print("Top 5 users for cascade size")
+for i, (key, value) in enumerate(visitedEdges.items()):
+    print(f"User: {key}, Cascade size: {len(value)}, Traversed edges: {value}")
+    if i == 5:
+        break
+
+# Checking longest path for cyclic graphs is slow, turning the graph into an acyclic one.
+G_users_acyclic = G_users.copy()
+while not nx.is_directed_acyclic_graph(G_users_acyclic):
+    cycle = nx.find_cycle(G_users_acyclic)
+    G_users_acyclic.remove_edge(*cycle[0])
+
+# Get the longest path
+path = nx.dag_longest_path(G_users_acyclic)
+length = nx.dag_longest_path_length(G_users_acyclic)
+
+print("Longest path:", path)
+print("Length:", length)
+
+
+# Task 14
+model = ep.IndependentCascadesModel(G_users)
+config = mc.Configuration()
+
+# Starting information spread from seed node @buzzfeednews
+config.add_model_initial_configuration("Infected", ["@buzzfeednews"])
+for e in G_users.edges():
+    config.add_edge_configuration("threshold", e, 1.0)  # <- spread always succeeds when treshold is 1
+
+model.set_initial_status(config)
+
+# Calculate iterations
+iterations = model.iteration_bunch(10)
+
+# Print iterations
+for i, iteration in enumerate(iterations):
+    if i != 0:  # Not printing iteration 0 due to verbosity
+        print(f"Step {i}")
+        print("Active nodes:", iteration["status"])
+
+
+# Task 15
+
+# Average path length won't work with directed graph
+undirected_users = G_users.to_undirected()
+
+nodes_removed = []
+connected_component_amounts = []
+largest_component_average_path_lengths = []
+
+# Removing 10 most central nodes one by one according to eigenvector_centrality,
+# and recalculating amount of connected components and average path length of largest connected component each time
+for i, node in enumerate(top_eigenvector_centrality["node"]):
+    nodes_removed.append(i)
+    undirected_users.remove_node(node)
+    connected_component_amounts.append(nx.number_connected_components(undirected_users))
+    largest_connected_component = max(nx.connected_components(undirected_users), key=len)
+    largest_component_average_path_lengths.append(nx.average_shortest_path_length(undirected_users.subgraph(largest_connected_component)))
+
+# Displaying results as two plots
+if True:
+    fig, ax = plt.subplots(1, 2)
+    ax[0].plot(nodes_removed, connected_component_amounts)
+    ax[0].set_xlabel("Central nodes removed")
+    ax[0].set_ylabel("Connected components")
+    ax[1].plot(nodes_removed, largest_component_average_path_lengths)
+    ax[1].set_xlabel("Central nodes removed")
+    ax[1].set_ylabel("Average path lengths of largest connected component")
+    plt.show()
