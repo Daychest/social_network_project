@@ -213,8 +213,10 @@ for i in range(len(cs)):
         if cs[i][j] > threshold:
             G_semantic.add_edge(cleaned_tweet_list[i], cleaned_tweet_list[j])
 G_semantic.remove_edges_from(nx.selfloop_edges(G_semantic))
-# nx.draw(G_semantic, node_size=10)
-# plt.show()
+plt.figure()
+plt.title("cosine similarity")
+nx.draw(G_semantic, node_size=10)
+plt.show()
 
 # Task 7
 user_hashtag_map = {}
@@ -275,10 +277,10 @@ G_users.remove_edges_from(nx.selfloop_edges(G_users))
 k_core = nx.k_core(G_users)
 print("users in k_core")
 print(k_core.nodes())
-# plt.figure()
-# plt.title("k_core")
-# nx.draw(k_core, node_size=10)
-# plt.show()
+plt.figure()
+plt.title("k_core")
+nx.draw(k_core, node_size=10)
+plt.show()
 
 # Task 10
 # split data set into 6h time groups
